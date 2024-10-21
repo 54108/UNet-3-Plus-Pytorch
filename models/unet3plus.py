@@ -200,6 +200,138 @@ class UNet3Plus(nn.Module):
             return torch.cat(outputs, dim=0)
         else:
             return outputs[0]
+        
+
+class UNet3Plus_modified(nn.Module):
+    def __init__(self, input_shape, output_channels, deep_supervision=False, cgm=False, training=False):
+        super(UNet3Plus, self).__init__()
+        self.deep_supervision = deep_supervision
+        self.CGM = deep_supervision and cgm
+        self.training = training
+
+        self.filters = [64, 128, 256]
+        self.cat_channels = self.filters[0]
+        self.cat_blocks = len(self.filters)
+        self.upsample_channels = self.cat_blocks * self.cat_channels
+
+        # Encoder
+        self.e1 = ConvBlock(input_shape[0], self.filters[0])
+        self.e2 = nn.Sequential(
+            nn.MaxPool2d(2),
+            ConvBlock(self.filters[0], self.filters[1])
+        )
+        self.e3 = nn.Sequential(
+            nn.MaxPool2d(2),
+            ConvBlock(self.filters[1], self.filters[2])
+        )
+
+        # Classification Guided Module
+        self.cgm = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Conv2d(self.filters[1], 2, kernel_size=1, padding=0),
+            nn.AdaptiveMaxPool2d(1),
+            nn.Flatten(),
+            nn.Sigmoid()
+        ) if self.CGM else None
+
+        # Decoder
+        # self.d4 = nn.ModuleList([
+        #     ConvBlock(self.filters[0], self.cat_channels, n=1),
+        #     ConvBlock(self.filters[1], self.cat_channels, n=1),
+        #     ConvBlock(self.filters[2], self.cat_channels, n=1),
+        #     ConvBlock(self.filters[3], self.cat_channels, n=1),
+        #     ConvBlock(self.filters[4], self.cat_channels, n=1)
+        # ])
+        # self.d4_conv = ConvBlock(self.upsample_channels, self.upsample_channels, n=1)
+
+        # self.d3 = nn.ModuleList([
+        #     ConvBlock(self.filters[0], self.cat_channels, n=1),
+        #     ConvBlock(self.filters[1], self.cat_channels, n=1),
+        #     ConvBlock(self.filters[2], self.cat_channels, n=1),
+        #     ConvBlock(self.upsample_channels, self.cat_channels, n=1),
+        #     ConvBlock(self.filters[4], self.cat_channels, n=1)
+        # ])
+        # self.d3_conv = ConvBlock(self.upsample_channels, self.upsample_channels, n=1)
+
+        self.d2 = nn.ModuleList([
+            ConvBlock(self.filters[0], self.cat_channels, n=1),
+            ConvBlock(self.filters[1], self.cat_channels, n=1),
+            # ConvBlock(self.upsample_channels, self.cat_channels, n=1),
+            # ConvBlock(self.upsample_channels, self.cat_channels, n=1),
+            ConvBlock(self.filters[2], self.cat_channels, n=1)
+        ])
+        self.d2_conv = ConvBlock(self.upsample_channels, self.upsample_channels, n=1)
+
+        self.d1 = nn.ModuleList([
+            ConvBlock(self.filters[0], self.cat_channels, n=1),
+            ConvBlock(self.upsample_channels, self.cat_channels, n=1),
+            # ConvBlock(self.upsample_channels, self.cat_channels, n=1),
+            # ConvBlock(self.upsample_channels, self.cat_channels, n=1),
+            ConvBlock(self.filters[2], self.cat_channels, n=1)
+        ])
+        self.d1_conv = ConvBlock(self.upsample_channels, self.upsample_channels, n=1)
+
+        self.final = nn.Conv2d(self.upsample_channels, output_channels, kernel_size=1)
+
+        # Deep Supervision
+        self.deep_sup = nn.ModuleList([
+                ConvBlock(self.upsample_channels, output_channels, n=1, is_bn=False, is_relu=False)
+                for _ in range(2)
+            ] + [ConvBlock(self.filters[3], output_channels, n=1, is_bn=False, is_relu=False)]
+        ) if self.deep_supervision else None
+
+    def forward(self, x) -> torch.Tensor:
+        training = self.training
+        # Encoder
+        e1 = self.e1(x)
+        e2 = self.e2(e1)
+        e3 = self.e3(e2)
+
+        # Classification Guided Module
+        if self.CGM:
+            cls = self.cgm(e3)
+            cls = torch.argmax(cls, dim=1).float()
+
+        # Decoder
+        d2 = [
+            F.max_pool2d(e1, 2),
+            e2,
+            F.interpolate(e3, scale_factor=2, mode='bilinear', align_corners=True)
+        ]
+        d2 = [conv(d) for conv, d in zip(self.d2, d2)]
+        d2 = torch.cat(d2, dim=1)
+        d2 = self.d2_conv(d2)
+
+        d1 = [
+            e1,
+            F.interpolate(d2, scale_factor=2, mode='bilinear', align_corners=True),
+        ]
+        d1 = [conv(d) for conv, d in zip(self.d1, d1)]
+        d1 = torch.cat(d1, dim=1)
+        d1 = self.d1_conv(d1)
+        d1 = self.final(d1)
+
+        outputs = [d1]
+
+        # Deep Supervision
+        if self.deep_supervision and training:
+            outputs.extend([
+                F.interpolate(self.deep_sup[2](d2), scale_factor=2, mode='bilinear', align_corners=True),
+                F.interpolate(self.deep_sup[3](e3), scale_factor=4, mode='bilinear', align_corners=True)
+            ])
+
+        # Classification Guided Module
+        if self.CGM:
+            outputs = [dot_product(out, cls) for out in outputs]
+        
+        outputs = [F.sigmoid(out) for out in outputs]
+        
+        if self.deep_supervision and training:
+            return torch.cat(outputs, dim=0)
+        else:
+            return outputs[0]
+        
+
 
 if __name__ == "__main__":
     INPUT_SHAPE = [1, 320, 320]
@@ -208,6 +340,7 @@ if __name__ == "__main__":
     unet_3P = UNet3Plus(INPUT_SHAPE, OUTPUT_CHANNELS, deep_supervision=False, cgm=False, training=True)
     unet_3P_deep_sup = UNet3Plus(INPUT_SHAPE, OUTPUT_CHANNELS, deep_supervision=True, cgm=False, training=True)
     unet_3P_deep_sup_cgm = UNet3Plus(INPUT_SHAPE, OUTPUT_CHANNELS, deep_supervision=True, cgm=True, training=True)
+    unet_3P_modified = UNet3Plus_modified(INPUT_SHAPE, OUTPUT_CHANNELS, deep_supervision=False, cgm=False, training=True)
     # print(unet_3P)
 
     # Example input tensor
@@ -221,4 +354,7 @@ if __name__ == "__main__":
     print(f"Output shape: {output.shape}")
     
     output = unet_3P_deep_sup_cgm(x)
+    print(f"Output shape: {output.shape}")
+
+    output = unet_3P_modified(x)
     print(f"Output shape: {output.shape}")

@@ -28,23 +28,23 @@ DATASET:
 
 MODEL:
     # available variants are unet3plus, unet3plus_deepsup, unet3plus_deepsup_cgm
-    TYPE: "unet3plus_deepsup"
+    TYPE: "unet3plus"
     WEIGHTS_FILE_NAME: model_${MODEL.TYPE}
 
 SEED: 5 # for result's reproducibility
 VERBOSE: 1 # For logs printing details, available options are 0, 1, 2
 DATALOADER_WORKERS: 3 # number of workers used for data loading
-SHOW_CENTER_CHANNEL_IMAGE: True # only true for UNet3+ for custom dataset it should be False
+SHOW_CENTER_CHANNEL_IMAGE: False # only true for UNet3+ for custom dataset it should be False
 
 # Model input shape
 INPUT:
-    HEIGHT: 640
-    WIDTH: 640
+    HEIGHT: 256
+    WIDTH: 256
     CHANNELS: 3
 
 # Model output classes
 OUTPUT:
-    CLASSES: 1
+    CLASSES: 3
 
 HYPER_PARAMETERS:
     EPOCHS: 500
@@ -67,7 +67,7 @@ CALLBACKS:
 
     CSV_LOGGER:
         PATH: "/checkpoint"
-        APPEND_LOGS: False
+        APPEND_LOGS: True
 
 PREPROCESS_DATA:
     RESIZE:
@@ -98,7 +98,7 @@ USE_MULTI_GPUS:
     # e.g. [4, 5, 7] means use gpu 5,6 and 8 for training/evaluation
     GPU_IDS: 3
 
-GPU_ID: 1
+GPU_ID: 0
 
 RESULT_DIR: "/outputs"
 

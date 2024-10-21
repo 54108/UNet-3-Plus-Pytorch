@@ -3,7 +3,7 @@ Returns Unet3+ model
 """
 from omegaconf import DictConfig
 
-from .unet3plus import UNet3Plus
+from .unet3plus import UNet3Plus, UNet3Plus_modified
 
 
 def prepare_model(cfg: DictConfig, training=False):
@@ -13,8 +13,8 @@ def prepare_model(cfg: DictConfig, training=False):
 
     input_shape = [cfg.INPUT.CHANNELS, cfg.INPUT.HEIGHT, cfg.INPUT.WIDTH]
 
-    if cfg.MODEL.TYPE == "tiny_unet3plus":
-        return UNet3Plus(
+    if cfg.MODEL.TYPE == "unet3plus_modified":
+        return UNet3Plus_modified(
             input_shape,
             cfg.OUTPUT.CLASSES + 1,
             False,
