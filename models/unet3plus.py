@@ -204,7 +204,7 @@ class UNet3Plus(nn.Module):
 
 class UNet3Plus_modified(nn.Module):
     def __init__(self, input_shape, output_channels, deep_supervision=False, cgm=False, training=False):
-        super(UNet3Plus, self).__init__()
+        super(UNet3Plus_modified, self).__init__()
         self.deep_supervision = deep_supervision
         self.CGM = deep_supervision and cgm
         self.training = training
@@ -305,6 +305,7 @@ class UNet3Plus_modified(nn.Module):
         d1 = [
             e1,
             F.interpolate(d2, scale_factor=2, mode='bilinear', align_corners=True),
+            F.interpolate(e3, scale_factor=4, mode='bilinear', align_corners=True)
         ]
         d1 = [conv(d) for conv, d in zip(self.d1, d1)]
         d1 = torch.cat(d1, dim=1)
